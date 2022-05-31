@@ -2,6 +2,10 @@
 ## 加强kt模式匹配, 支持守卫与解构
 Support pattern matching with complex patterns
 
+[YouTrack KT-186启发](https://youtrack.jetbrains.com/issue/KT-186) ->  https://youtrack.jetbrains.com/issue/KT-186
+
+[Kotlin KEEP 213启发](https://github.com/Kotlin/KEEP/pull/213) -> https://github.com/Kotlin/KEEP/pull/213
+
 ```kotlin
 data class Relative(val name: String = "", val relationship: String = "", val age: Int = 0)
 data class Staff(val name: String = "Good colleague", val id: Int = 0)
