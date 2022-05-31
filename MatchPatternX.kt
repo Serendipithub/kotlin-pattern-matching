@@ -7,21 +7,30 @@ import java.util.concurrent.locks.ReentrantLock
 annotation class DSL
 
 @DSL
-inline fun <reified T : Any> match(matchObject: T, block: MatchPatternScope<T>.() -> Unit) {
-    MatchPatternScope(matchObject).block()
+inline fun <reified T : Any,V> match(
+    matchObject: T,
+    block: MatchPatternScope<T, V>.() -> Unit
+): V {
+    val scope = MatchPatternScope<T, V>(matchObject)
+    scope.block()
+    return scope.result!!
 }
 
-class MatchPatternScope<T>(val matchObject: T) {
+class MatchPatternScope<T, V>(val matchObject: T) {
     val lock = ReentrantLock()
     var doNextStep = true
     var isEnd = false
     fun matchEnd() {
         isEnd = true
     }
+
+    var result: V? = null
 }
 
 @DSL
-inline fun <reified T : Any, reified V : Any> MatchPatternScope<T>.`is`(matchObjectExpect: V): V {
+inline fun <reified T : Any, reified V : Any, reified K : Any> MatchPatternScope<T, K>.`is`(
+    matchObjectExpect: V
+): V {
     lock.lock()
     if (isEnd) {
         //println("match is end")
@@ -39,9 +48,9 @@ inline fun <reified T : Any, reified V : Any> MatchPatternScope<T>.`is`(matchObj
 }
 
 @DSL
-inline fun <reified T : Any, reified V : Any> MatchPatternScope<T>.`is`(
+inline fun <reified T : Any, reified V : Any, reified K : Any> MatchPatternScope<T, K>.`is`(
     matchObjectExpect: V,
-    crossinline block: V.(V) -> Unit
+    crossinline block: V.(V) -> K
 ) {
     with(this@MatchPatternScope) {
         `is`(matchObjectExpect) `if` { true } then {
@@ -50,8 +59,8 @@ inline fun <reified T : Any, reified V : Any> MatchPatternScope<T>.`is`(
     }
 }
 
-context(MatchPatternScope<T>) @DSL
-infix fun <T, V> V.`if`(block: V.() -> Boolean): V {
+context(MatchPatternScope<T, K>) @DSL
+infix fun <T, V, K> V.`if`(block: V.() -> Boolean): V {
     if (isEnd) {
 //        println("match is end")
         return this
@@ -64,14 +73,14 @@ infix fun <T, V> V.`if`(block: V.() -> Boolean): V {
     return this
 }
 
-context(MatchPatternScope<T>) @DSL
-infix fun <T, V> V.then(block: (V) -> Unit) {
+context(MatchPatternScope<T, K>) @DSL
+infix fun <T, V, K> V.then(block: (V) -> K?) {
     if (isEnd) {
 //        println("match is end")
         return
     }
     if (doNextStep) {
-        block(this@then)
+        this@MatchPatternScope.result = block(this@then)
     }
 //    println("then 3 doNextStep - ${doNextStep}")
 //    println("final before (end match  ${this@MatchPatternScope.isEnd})")
@@ -79,6 +88,7 @@ infix fun <T, V> V.then(block: (V) -> Unit) {
         this@MatchPatternScope.matchEnd()
     }
 //    println("final after  (end match  ${this@MatchPatternScope.isEnd})")
+
     lock.unlock()
 }
 
@@ -87,20 +97,24 @@ data class Staff(val name: String = "Good colleague", val id: Int = 0)
 
 fun main() {
     val example = Staff("jack", 1)
-    match(example) {
+    val num = match(example) {
         `is`(Relative()) `if` {
             this.age > 18
         } then { (name, _, age) ->
             println("I'm $name")
             println("My age is $age")
+            "这里不会匹配到"
         }
         `is`(Staff()) `if` {
             this.id > 0
         } then { (name, id) ->
             println("fellow $name, id is $id")
+            "这回是表达式了"
         }
         `is`(Staff()) { (name, id) ->
             println("$name, id is $id")
+            "这里也不会匹配到"
         }
     }
+    println(num)//能打印出来
 }
