@@ -1,6 +1,7 @@
 # kotlin-pattern-matching 
 ## 加强kt模式匹配, 支持守卫与解构
 ## 现在match是表达式了
+## 加入else分支模式匹配
 Support pattern matching with complex patterns
 
 [YouTrack KT-186启发](https://youtrack.jetbrains.com/issue/KT-186) ->  https://youtrack.jetbrains.com/issue/KT-186
