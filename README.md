@@ -12,28 +12,41 @@ Support pattern matching with complex patterns
 data class Relative(val name: String = "", val relationship: String = "", val age: Int = 0)
 data class Staff(val name: String = "Good colleague", val id: Int = 0)
 
+
 fun main() {
     val example = Staff("jack", 1)
+
     val num = match(example) {
-        `is`(Relative()) `if` {
+        //类的KClass对象是单例的, 不会被重复创建消耗内存
+        `is`(Relative::class) `if` {
             this.age > 18
         } then { (name, _, age) ->
             println("I'm $name")
             println("My age is $age")
-            "这里不会匹配到"
+            "表达式1"
         }
-        `is`(Staff()) `if` {
-            this.id > 0
+        `is`(Staff::class) `if` {
+            this.id > 10
         } then { (name, id) ->
             println("fellow $name, id is $id")
-            "这回是表达式了"
+            "表达式2"
         }
-        `is`(Staff()) { (name, id) ->
+        `is`(Relative::class) { (name, _, age) ->
+            println("I'm $name")
+            println("My age is $age")
+            "表达式3"
+        }
+        `is`(Staff::class) `if` {
+            true
+        } then { (name, id) ->
             println("$name, id is $id")
-            "这里也不会匹配到"
+            "表达式4"
+        }
+        `else` {
+            println("I'm not a relative")
+            "表达式5"
         }
     }
-    println(num)//能打印出来
 }
 ```
 ### [源文件](./MatchPatternX.kt "source code")
