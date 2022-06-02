@@ -54,32 +54,56 @@ fun main() {
 ```kotlin
 package com.example.myapplication.tool.extension
 
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.locks.ReentrantLock
+import kotlin.reflect.KClass
 
 @DslMarker
 @Target(AnnotationTarget.FUNCTION)
 annotation class DSL
 
 @DSL
-inline fun <reified T : Any> match(matchObject: T, block: MatchPatternScope<T>.() -> Unit) {
-    MatchPatternScope(matchObject).block()
+inline fun <reified T : Any, V> match(
+    matchObject: T,
+    block: MatchPatternScope<T, V>.() -> Unit
+): V {
+    val scope = MatchPatternScope<T, V>(matchObject)
+    scope.block()
+    return scope.result!!
 }
 
-class MatchPatternScope<T>(val matchObject: T) {
+class MatchPatternScope<T, V>(val matchObject: T) {
+    //无法从语法层面实现每次只对一个case进行匹配，因为case可能会有多个，所以需要一个锁
     val lock = ReentrantLock()
+
+    //是否进行下一步操作
     var doNextStep = true
+
+    //是否匹配成功
     var isEnd = false
+
+    //设置匹配成功
     fun matchEnd() {
         isEnd = true
     }
+
+    //返回值
+    var result: V? = null
+
+    //用于解决并发问题, 防止else先被执行
+    val intoTimes = AtomicInteger(0)
 }
 
 @DSL
-inline fun <reified T : Any, reified V : Any> MatchPatternScope<T>.`is`(matchObjectExpect: V): V {
+inline fun <reified T : Any, reified V : Any, reified K : Any> MatchPatternScope<T, K>.`is`(
+    //这个参数仅用于匹配类型, 必须要有, 不然写不成 dsl 形式
+    matchObjectExpect: KClass<V>
+): V? {
+    intoTimes.incrementAndGet()
     lock.lock()
     if (isEnd) {
         //println("match is end")
-        return matchObjectExpect
+        return null
     }
     //println("is 0 doNextStep - $doNextStep")
     if (T::class == V::class) {
@@ -89,43 +113,63 @@ inline fun <reified T : Any, reified V : Any> MatchPatternScope<T>.`is`(matchObj
         doNextStep = false
     }
     //println("is 1 doNextStep - ${doNextStep}")
-    return matchObjectExpect
+    return null
 }
 
 @DSL
-inline fun <reified T : Any, reified V : Any> MatchPatternScope<T>.`is`(
-    matchObjectExpect: V,
-    crossinline block: V.(V) -> Unit
-) {
-    with(this@MatchPatternScope) {
-        `is`(matchObjectExpect) `if` { true } then {
-            matchObjectExpect.block(matchObjectExpect)
+inline fun <reified T : Any, reified K : Any> MatchPatternScope<T, K>.`else`(block: T.() -> K) {
+    intoTimes.incrementAndGet()
+    while (true) {
+
+        if (intoTimes.get() > 1) {
+            "here1".println()
+            continue
+        }
+        if (intoTimes.get() == 1) {
+            if (!isEnd) {
+                this.result = this.matchObject.block()
+            }
+            return
         }
     }
 }
 
-context(MatchPatternScope<T>) @DSL
-infix fun <T, V> V.`if`(block: V.() -> Boolean): V {
-    if (isEnd) {
-//        println("match is end")
-        return this
+@DSL
+inline fun <reified T : Any, reified V : Any, reified K : Any> MatchPatternScope<T, K>.`is`(
+    matchObjectExpect: KClass<V>,
+    crossinline block: V.(V) -> K
+) {
+    with(this@MatchPatternScope) {
+        `is`(matchObjectExpect) `if` { true } then {
+            it.block(it)
+        }
+    }
+}
+
+context(MatchPatternScope<T, K>) @DSL
+infix fun <T, V, K> (V?).`if`(block: V.() -> Boolean): V? {
+    if (this == null) {
+        //this 为 null时，说明上一步没有匹配到，直接返回null
+        return null
     }
 
-    if (!block()) {
+    if (!this!!.block()) {
+        //this 不为 null，但是 block 不为 true，说明上一步匹配到了，但是 block 不满足，下一步就不执行了
+        //设置 doNextStep 为 false
         doNextStep = false
     }
 //    println("if 2 doNextStep - ${doNextStep}")
     return this
 }
 
-context(MatchPatternScope<T>) @DSL
-infix fun <T, V> V.then(block: (V) -> Unit) {
+context(MatchPatternScope<T, K>) @DSL
+infix fun <T, V, K> (V?).then(block: (V) -> K?) {
     if (isEnd) {
 //        println("match is end")
         return
     }
     if (doNextStep) {
-        block(this@then)
+        this@MatchPatternScope.result = block(this@then!!)
     }
 //    println("then 3 doNextStep - ${doNextStep}")
 //    println("final before (end match  ${this@MatchPatternScope.isEnd})")
@@ -133,28 +177,46 @@ infix fun <T, V> V.then(block: (V) -> Unit) {
         this@MatchPatternScope.matchEnd()
     }
 //    println("final after  (end match  ${this@MatchPatternScope.isEnd})")
+
     lock.unlock()
+    intoTimes.decrementAndGet()
 }
 
-data class Relative(val name: String = "", val relationship: String = "", val age: Int = 0)
-data class Staff(val name: String = "Good colleague", val id: Int = 0)
+data class Relative(val name: String, val relationship: String, val age: Int)
+data class Staff(val name: String, val id: Int)
 
 fun main() {
     val example = Staff("jack", 1)
-    match(example) {
-        `is`(Relative()) `if` {
+
+    val num = match(example) {
+        //类的KClass对象是单例的, 不会被重复创建消耗内存
+        `is`(Relative::class) `if` {
             this.age > 18
         } then { (name, _, age) ->
             println("I'm $name")
             println("My age is $age")
+            "表达式1"
         }
-        `is`(Staff()) `if` {
-            this.id > 0
+        `is`(Staff::class) `if` {
+            this.id > 10
         } then { (name, id) ->
             println("fellow $name, id is $id")
+            "表达式2"
         }
-        `is`(Staff()) { (name, id) ->
+        `is`(Relative::class) { (name, _, age) ->
+            println("I'm $name")
+            println("My age is $age")
+            "表达式3"
+        }
+        `is`(Staff::class) `if` {
+            true
+        } then { (name, id) ->
             println("$name, id is $id")
+            "表达式4"
+        }
+        `else` {
+            println("I'm not a relative")
+            "表达式5"
         }
     }
 }
