@@ -49,7 +49,7 @@ fun main() {
     }
 }
 ```
-### [源文件](./MatchPatternX.kt "source code")
+### [源代码](./MatchPatternX.kt "source code")
 
 ```kotlin
 package com.example.myapplication.tool.extension
